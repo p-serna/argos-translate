@@ -788,7 +788,7 @@ def get_translation_from_codes(from_code: str, to_code: str) -> ITranslation:
     return from_lang.get_translation(to_lang)
 
 
-def translate(q: str, from_code: str, to_code: str) -> str:
+def translate(q: str | List[str], from_code: str, to_code: str) -> str:
     """Translate a string of text
 
     Args:
@@ -800,4 +800,9 @@ def translate(q: str, from_code: str, to_code: str) -> str:
         The translated text
     """
     translation = get_translation_from_codes(from_code, to_code)
-    return translation.translate(q)
+    if isinstance(q, str):
+        return translation.translate(q)
+    elif isinstance(q, List[str]):
+        return translation.translate_batch(q)
+    else:
+        raise TypeError("Input must be a string or a list of strings")
