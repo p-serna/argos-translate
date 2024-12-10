@@ -423,6 +423,59 @@ class CachedTranslation(ITranslation):
             hypotheses_to_return[i].value = hypotheses_to_return[i].value.lstrip("\n")
         return hypotheses_to_return
 
+    def hypotheses_batch(self, input_texts: list[str], num_hypotheses: int = 4) -> list[list[Hypothesis]]:
+        new_cache = dict()  # 'text': ['t1'...('tN')]
+
+        paragraphs_ls = [ITranslation.split_into_paragraphs(input_text) for input_text in input_texts]
+
+        translated_paragraphs_d = {}
+        paragraphs_to_translate = []
+        for paragraphs in paragraphs_ls:
+            for paragraph in paragraphs:
+                translated_paragraph = self.cache.get(paragraph)
+                if translated_paragraph:
+                    translated_paragraphs_d[paragraph] = translated_paragraph
+                else:
+                    translated_paragraphs_d[paragraph] = ""
+                    paragraphs_to_translate.append(paragraph)
+
+        translated_paragraphs_p = self.underlying.hypotheses_batch(
+                    paragraphs_to_translate, num_hypotheses
+                )
+        for o_paragraph, paragraph in zip(paragraphs_to_translate, translated_paragraphs_p):
+            translated_paragraphs_d[o_paragraph] = paragraph
+
+        translated_paragraphs_ls = []
+        for paragraphs in paragraphs_ls:
+            translated_paragraphs = []
+            for paragraph in paragraphs:
+                translated_paragraphs.append(translated_paragraphs_d[paragraph])
+                new_cache[paragraph] = translated_paragraph
+            translated_paragraphs_ls.append(translated_paragraphs)
+
+        self.cache = new_cache
+
+        # Construct hypotheses
+
+        hypotheses_to_return_ls = []
+
+        for translated_paragraphs in translated_paragraphs_ls:
+            hypotheses_to_return = [Hypothesis("", 0) for i in range(num_hypotheses)]
+            for i in range(num_hypotheses):
+                for j in range(len(translated_paragraphs)):
+                    if not translated_paragraphs[j]:
+                        continue
+                    value = ITranslation.combine_paragraphs(
+                        [hypotheses_to_return[i].value, translated_paragraphs[j][i].value]
+                    )
+                    score = (
+                        hypotheses_to_return[i].score + translated_paragraphs[j][i].score
+                    )
+                    hypotheses_to_return[i] = Hypothesis(value, score)
+                hypotheses_to_return[i].value = hypotheses_to_return[i].value.lstrip("\n")
+            hypotheses_to_return_ls.append(hypotheses_to_return)
+        return hypotheses_to_return_ls
+
 
 class RemoteTranslation(ITranslation):
     """A translation provided by a remote LibreTranslate server"""
@@ -802,7 +855,7 @@ def translate(q: str | List[str], from_code: str, to_code: str) -> str:
     translation = get_translation_from_codes(from_code, to_code)
     if isinstance(q, str):
         return translation.translate(q)
-    elif isinstance(q, List[str]):
+    elif isinstance(q, list):
         return translation.translate_batch(q)
     else:
         raise TypeError("Input must be a string or a list of strings")
